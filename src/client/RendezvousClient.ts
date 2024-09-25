@@ -63,14 +63,17 @@ export class RendezvousClient extends TypedEventEmitter<PeerDiscoveryEvents> imp
 	#started: boolean = false
 	#topologyId: string | null = null
 
-	constructor(private readonly components: RendezvousClientComponents, init: RendezvousClientInit) {
+	constructor(
+		private readonly components: RendezvousClientComponents,
+		init: RendezvousClientInit,
+	) {
 		super()
 		this.autoRegister = init.autoRegister ?? []
 		this.autoDiscover = init.autoDiscover ?? true
 		this.connectionFilter = init.connectionFilter ?? ((connection) => true)
 	}
 
-	readonly [peerDiscoverySymbol] = this;
+	readonly [peerDiscoverySymbol] = this
 
 	readonly [serviceCapabilities]: string[] = ["@libp2p/peer-discovery"]
 
@@ -226,6 +229,8 @@ export class RendezvousClient extends TypedEventEmitter<PeerDiscoveryEvents> imp
 						const { peerId, multiaddrs } = PeerRecord.createFromProtobuf(envelope.payload)
 						assert(envelope.peerId.equals(peerId), "invalid peer id in registration")
 
+						this.log("discovered %p on %s with addresses %o", peerId, ns, multiaddrs)
+
 						const peer = await this.components.peerStore.merge(peerId, {
 							addresses: multiaddrs.map((addr) => ({ multiaddr: addr, isCertified: true })),
 							peerRecordEnvelope: signedPeerRecord,
@@ -242,6 +247,8 @@ export class RendezvousClient extends TypedEventEmitter<PeerDiscoveryEvents> imp
 					const record = new PeerRecord({ peerId: this.components.peerId, multiaddrs })
 					const envelope = await RecordEnvelope.seal(record, this.components.peerId)
 					const signedPeerRecord = envelope.marshal()
+
+					this.log("registering multiaddrs %o", multiaddrs)
 
 					source.push({
 						type: Message.MessageType.REGISTER,

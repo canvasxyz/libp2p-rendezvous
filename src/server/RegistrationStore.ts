@@ -67,6 +67,7 @@ export class RegistrationStore {
 	}
 
 	public register(namespace: string, peerId: PeerId, signedPeerRecord: Uint8Array, ttl: bigint) {
+		this.log.trace("register(%s, %p)", namespace, peerId)
 		const expiration = now() + ttl
 		this.#unregister.run({ peer: peerId.toString(), namespace })
 		this.#register.run({
@@ -78,6 +79,7 @@ export class RegistrationStore {
 	}
 
 	public unregister(namespace: string, peerId: PeerId) {
+		this.log.trace("unregister(%s, %p)", namespace, peerId)
 		this.#unregister.run({ peer: peerId.toString(), namespace })
 	}
 

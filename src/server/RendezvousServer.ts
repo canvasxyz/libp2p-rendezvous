@@ -1,14 +1,5 @@
-import {
-	PeerId,
-	Startable,
-	Logger,
-	TypedEventTarget,
-	Libp2pEvents,
-	PeerStore,
-	Connection,
-	Stream,
-	StreamHandler,
-} from "@libp2p/interface"
+import { PeerId, Startable, TypedEventTarget, Libp2pEvents, PeerStore, StreamHandler } from "@libp2p/interface"
+
 import { Registrar, AddressManager, ConnectionManager } from "@libp2p/interface-internal"
 import { logger } from "@libp2p/logger"
 
@@ -47,7 +38,10 @@ export class RendezvousServer implements Startable {
 
 	#started: boolean = false
 
-	constructor(private readonly components: RendezvousServerComponents, init: RendezvousServerInit) {
+	constructor(
+		private readonly components: RendezvousServerComponents,
+		init: RendezvousServerInit,
+	) {
 		this.store = new RegistrationStore(init.path ?? null)
 	}
 
