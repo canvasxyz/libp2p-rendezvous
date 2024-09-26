@@ -31,10 +31,10 @@ import { rendezvousServer } from "@canvas-js/libp2p-rendezvous/server"
 
 const libp2p = await createLibp2p({
   // ...
-	services: {
-		// ...
-		rendezvous: rendezvousServer({ path: "rendezvous-registrations.sqlite" })
-	},
+  services: {
+    // ...
+    rendezvous: rendezvousServer({ path: "rendezvous-registrations.sqlite" }),
+  },
 })
 ```
 
