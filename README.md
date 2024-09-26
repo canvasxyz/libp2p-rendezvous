@@ -20,7 +20,7 @@ npm i @canvas-js/libp2p-rendezvous
 
 ## Usage
 
-Rendezvous servers maintain a SQLite database of "registrations", consisting of a string namespace and a signed peer record. Rendezvous clients can *register* and *unregister* themselves for arbitrary namespaces, and *discover* other peer registrations by namespace.
+Rendezvous servers maintain a SQLite database of "registrations", consisting of a string namespace and a signed peer record. Rendezvous clients can _register_ and _unregister_ themselves for arbitrary namespaces, and _discover_ other peer registrations by namespace.
 
 ### Server
 
@@ -30,9 +30,9 @@ Add the rendezvous server service to a public libp2p peer:
 import { rendezvousServer } from "@canvas-js/libp2p-rendezvous/server"
 
 const libp2p = await createLibp2p({
-  ...
+  // ...
 	services: {
-		...
+		// ...
 		rendezvous: rendezvousServer({ path: "rendezvous-registrations.sqlite" })
 	},
 })
@@ -49,10 +49,10 @@ import { bootstrap } from "@libp2p/bootstrap"
 import { rendezvousClient } from "@canvas-js/libp2-rendezvous/client"
 
 const libp2p = await createLibp2p({
-  ...
+  // ...
   peerDiscovery: [bootstrap(["/dns4/my-rendezvous-server/..."])]
 	services: {
-		...
+		// ...
 		rendezvous: rendezvousClient({
 		  autoRegister: ["topic-a", "topic-b"],
 		  autoDiscover: true,
@@ -85,28 +85,28 @@ import type { Registrar, AddressManager, ConnectionManager } from "@libp2p/inter
 import type { Multiaddr } from "@multiformats/multiaddr"
 
 export interface RendezvousPoint {
-    discover(namespace: string, options?: { limit?: number }): Promise<Peer[]>
-    register(namespace: string, options?: { ttl?: number }): Promise<{ ttl: number }>
-    unregister(namespace: string): Promise<void>
+  discover(namespace: string, options?: { limit?: number }): Promise<Peer[]>
+  register(namespace: string, options?: { ttl?: number }): Promise<{ ttl: number }>
+  unregister(namespace: string): Promise<void>
 }
 
 export type RendezvousClientComponents = {
-    events: TypedEventTarget<Libp2pEvents>
-    peerId: PeerId
-    peerStore: PeerStore
-    registrar: Registrar
-    addressManager: AddressManager
-    connectionManager: ConnectionManager
+  events: TypedEventTarget<Libp2pEvents>
+  peerId: PeerId
+  peerStore: PeerStore
+  registrar: Registrar
+  addressManager: AddressManager
+  connectionManager: ConnectionManager
 }
 
 export interface RendezvousClientInit {
-    /**
-     * namespace or array of namespaces to register automatically
-     * with all peers that support the rendezvous server protocol
-     */
-    autoRegister?: string[] | null
-    autoDiscover?: boolean
-    connectionFilter?: (connection: Connection) => boolean
+  /**
+   * namespace or array of namespaces to register automatically
+   * with all peers that support the rendezvous server protocol
+   */
+  autoRegister?: string[] | null
+  autoDiscover?: boolean
+  connectionFilter?: (connection: Connection) => boolean
 }
 
 export declare class RendezvousClient {
@@ -120,8 +120,9 @@ export declare class RendezvousClient {
   ): Promise<T>
 }
 
-export declare const rendezvousClient: (init?: RendezvousClientInit) =>
-  (components: RendezvousClientComponents) => RendezvousClient
+export declare const rendezvousClient: (
+  init?: RendezvousClientInit,
+) => (components: RendezvousClientComponents) => RendezvousClient
 ```
 
 ```ts
@@ -131,26 +132,27 @@ import { TypedEventTarget, Libp2pEvents, PeerId, PeerStore } from "@libp2p/inter
 import { Registrar, AddressManager, ConnectionManager } from "@libp2p/interface-internal"
 
 export type RendezvousServerComponents = {
-    events: TypedEventTarget<Libp2pEvents>
-    peerId: PeerId
-    peerStore: PeerStore
-    registrar: Registrar
-    addressManager: AddressManager
-    connectionManager: ConnectionManager
+  events: TypedEventTarget<Libp2pEvents>
+  peerId: PeerId
+  peerStore: PeerStore
+  registrar: Registrar
+  addressManager: AddressManager
+  connectionManager: ConnectionManager
 }
 
 export interface RendezvousServerInit {
-    path?: string | null
+  path?: string | null
 }
 
 export declare class RendezvousServer implements Startable {
-    public static protocol = "/canvas/rendezvous/1.0.0"
+  public static protocol = "/canvas/rendezvous/1.0.0"
 
-    public constructor(components: RendezvousServerComponents, init: RendezvousServerInit)
+  public constructor(components: RendezvousServerComponents, init: RendezvousServerInit)
 }
 
-export declare const rendezvousServer: (init?: RendezvousServerInit) =>
-  (components: RendezvousServerComponents) => RendezvousServer
+export declare const rendezvousServer: (
+  init?: RendezvousServerInit,
+) => (components: RendezvousServerComponents) => RendezvousServer
 ```
 
 ## Contributing
