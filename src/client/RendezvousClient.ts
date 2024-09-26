@@ -4,16 +4,17 @@ import {
 	TypedEventTarget,
 	Libp2pEvents,
 	PeerStore,
-	CodeError,
 	Peer,
 	Connection,
-	peerDiscoverySymbol,
-	serviceCapabilities,
 	TypedEventEmitter,
 	PeerDiscoveryEvents,
+	PrivateKey,
+	peerDiscoverySymbol,
+	serviceCapabilities,
 } from "@libp2p/interface"
 import { Registrar, AddressManager, ConnectionManager } from "@libp2p/interface-internal"
 import { logger } from "@libp2p/logger"
+import { peerIdFromPublicKey } from "@libp2p/peer-id"
 import { PeerRecord, RecordEnvelope } from "@libp2p/peer-record"
 import { Multiaddr } from "@multiformats/multiaddr"
 
@@ -37,6 +38,7 @@ export type RendezvousClientComponents = {
 	registrar: Registrar
 	addressManager: AddressManager
 	connectionManager: ConnectionManager
+	privateKey: PrivateKey
 }
 
 export interface RendezvousClientInit {
@@ -227,7 +229,8 @@ export class RendezvousClient extends TypedEventEmitter<PeerDiscoveryEvents> imp
 
 					const { status, statusText, registrations, cookie } = res.discoverResponse
 					if (status !== Message.ResponseStatus.OK) {
-						throw new CodeError(`error in discovery response: ${statusText}`, status)
+						this.log.error("error in discover response: %s", statusText)
+						throw new Error(status)
 					}
 
 					const peers: Peer[] = []
@@ -236,7 +239,7 @@ export class RendezvousClient extends TypedEventEmitter<PeerDiscoveryEvents> imp
 						assert(ns === namespace, "invalid namespace in registration")
 						const envelope = await RecordEnvelope.openAndCertify(signedPeerRecord, PeerRecord.DOMAIN)
 						const { peerId, multiaddrs } = PeerRecord.createFromProtobuf(envelope.payload)
-						assert(envelope.peerId.equals(peerId), "invalid peer id in registration")
+						assert(peerIdFromPublicKey(envelope.publicKey).equals(peerId), "invalid peer id in registration")
 
 						this.log("discovered %p on %s with addresses %o", peerId, ns, multiaddrs)
 
@@ -252,9 +255,9 @@ export class RendezvousClient extends TypedEventEmitter<PeerDiscoveryEvents> imp
 				},
 				register: async (namespace, options = {}) => {
 					this.log.trace("register(%s, %o)", namespace, options)
-					const multiaddrs = options.multiaddrs ?? this.components.addressManager.getAddresses()
+					const multiaddrs = options.multiaddrs ?? this.components.addressManager.getAnnounceAddrs()
 					const record = new PeerRecord({ peerId: this.components.peerId, multiaddrs })
-					const envelope = await RecordEnvelope.seal(record, this.components.peerId)
+					const envelope = await RecordEnvelope.seal(record, this.components.privateKey)
 					const signedPeerRecord = envelope.marshal()
 
 					this.log("registering multiaddrs %o", multiaddrs)
@@ -272,7 +275,8 @@ export class RendezvousClient extends TypedEventEmitter<PeerDiscoveryEvents> imp
 
 					const { status, statusText, ttl } = res.registerResponse
 					if (status !== Message.ResponseStatus.OK) {
-						throw new CodeError(`error in register response: ${statusText}`, status)
+						this.log.error("error in register response: %s", statusText)
+						throw new Error(status)
 					}
 
 					return { ttl: Number(ttl) }
