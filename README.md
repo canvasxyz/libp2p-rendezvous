@@ -51,13 +51,13 @@ import { rendezvousClient } from "@canvas-js/libp2-rendezvous/client"
 const libp2p = await createLibp2p({
   // ...
   peerDiscovery: [bootstrap(["/dns4/my-rendezvous-server/..."])]
-	services: {
-		// ...
-		rendezvous: rendezvousClient({
-		  autoRegister: ["topic-a", "topic-b"],
-		  autoDiscover: true,
-		})
-	},
+  services: {
+    // ...
+    rendezvous: rendezvousClient({
+      autoRegister: ["topic-a", "topic-b"],
+      autoDiscover: true,
+    })
+  },
 })
 ```
 
