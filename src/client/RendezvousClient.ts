@@ -26,7 +26,7 @@ import { assert } from "./utils.js"
 
 export interface RendezvousPoint {
 	discover(namespace: string, options?: { limit?: number }): Promise<Peer[]>
-	register(namespace: string, options?: { ttl?: number }): Promise<{ ttl: number }>
+	register(namespace: string, options?: { ttl?: number; multiaddrs?: Multiaddr[] }): Promise<{ ttl: number }>
 	unregister(namespace: string): Promise<void>
 }
 
@@ -46,6 +46,7 @@ export interface RendezvousClientInit {
 	 */
 	autoRegister?: string[] | null
 	autoDiscover?: boolean
+	autoDiscoverInterval?: number
 	connectionFilter?: (connection: Connection) => boolean
 }
 
@@ -58,10 +59,13 @@ export class RendezvousClient extends TypedEventEmitter<PeerDiscoveryEvents> imp
 
 	private readonly autoRegister: string[]
 	private readonly autoDiscover: boolean
+	private readonly autoDiscoverInterval: number
 	private readonly connectionFilter: (connection: Connection) => boolean
 
 	#started: boolean = false
 	#topologyId: string | null = null
+
+	#announceAddrs: Multiaddr[] = []
 
 	constructor(
 		private readonly components: RendezvousClientComponents,
@@ -70,6 +74,7 @@ export class RendezvousClient extends TypedEventEmitter<PeerDiscoveryEvents> imp
 		super()
 		this.autoRegister = init.autoRegister ?? []
 		this.autoDiscover = init.autoDiscover ?? true
+		this.autoDiscoverInterval = init.autoDiscoverInterval ?? Infinity
 		this.connectionFilter = init.connectionFilter ?? ((connection) => true)
 	}
 
@@ -134,13 +139,15 @@ export class RendezvousClient extends TypedEventEmitter<PeerDiscoveryEvents> imp
 		}
 
 		const minTTL = await this.#connect(connection, async (point) => {
-			let minTTL = Infinity
+			let minTTL = this.autoDiscoverInterval
 
 			for (const ns of this.autoRegister) {
-				const { ttl } = await point.register(ns)
-				minTTL = Math.min(minTTL, ttl)
-
-				this.log("successfully registered %s with %p (ttl %d)", ns, peerId, ttl)
+				const multiaddrs = this.components.addressManager.getAnnounceAddrs()
+				if (multiaddrs.length > 0) {
+					const { ttl } = await point.register(ns, { multiaddrs })
+					minTTL = Math.min(minTTL, ttl)
+					this.log("successfully registered %s with %p (ttl %d)", ns, peerId, ttl)
+				}
 
 				if (this.autoDiscover) {
 					const results = await point.discover(ns)
@@ -243,7 +250,7 @@ export class RendezvousClient extends TypedEventEmitter<PeerDiscoveryEvents> imp
 				},
 				register: async (namespace, options = {}) => {
 					this.log.trace("register(%s, %o)", namespace, options)
-					const multiaddrs = this.components.addressManager.getAnnounceAddrs()
+					const multiaddrs = options.multiaddrs ?? this.components.addressManager.getAddresses()
 					const record = new PeerRecord({ peerId: this.components.peerId, multiaddrs })
 					const envelope = await RecordEnvelope.seal(record, this.components.peerId)
 					const signedPeerRecord = envelope.marshal()
