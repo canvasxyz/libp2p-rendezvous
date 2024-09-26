@@ -147,6 +147,8 @@ export class RendezvousClient extends TypedEventEmitter<PeerDiscoveryEvents> imp
 					const { ttl } = await point.register(ns, { multiaddrs })
 					minTTL = Math.min(minTTL, ttl)
 					this.log("successfully registered %s with %p (ttl %d)", ns, peerId, ttl)
+				} else {
+					this.log("skipping registration because no announce addresses were configured")
 				}
 
 				if (this.autoDiscover) {
