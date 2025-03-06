@@ -8,27 +8,27 @@ import { rendezvousClient } from "@canvas-js/libp2p-rendezvous/client"
 import { getLibp2p } from "./libp2p.js"
 import { multiaddr } from "@multiformats/multiaddr"
 
-// test.serial("manual registration and discovery", async (t) => {
-// 	const server = await getLibp2p(t, { port: 8880 }, { rendezvous: rendezvousServer({}) })
-// 	const clientA = await getLibp2p(t, { name: "client-a", port: 8881 }, { rendezvous: rendezvousClient({}) })
-// 	const clientB = await getLibp2p(t, { name: "client-b", port: 8882 }, { rendezvous: rendezvousClient({}) })
+test.serial("manual registration and discovery", async (t) => {
+	const server = await getLibp2p(t, { port: 8880 }, { rendezvous: rendezvousServer({}) })
+	const clientA = await getLibp2p(t, { name: "client-a", port: 8881 }, { rendezvous: rendezvousClient({}) })
+	const clientB = await getLibp2p(t, { name: "client-b", port: 8882 }, { rendezvous: rendezvousClient({}) })
 
-// 	await setTimeout(100)
+	await setTimeout(100)
 
-// 	await clientA.services.rendezvous.connect(server.getMultiaddrs(), async (point) => {
-// 		await point.register("foobar")
-// 	})
+	await clientA.services.rendezvous.connect(server.getMultiaddrs(), async (point) => {
+		await point.register("foobar")
+	})
 
-// 	await setTimeout(100)
+	await setTimeout(100)
 
-// 	await clientB.services.rendezvous.connect(server.getMultiaddrs(), async (point) => {
-// 		const results = await point.discover("foobar")
-// 		t.true(results.length === 1)
-// 		t.true(results[0].id.equals(clientA.peerId))
-// 	})
+	await clientB.services.rendezvous.connect(server.getMultiaddrs(), async (point) => {
+		const results = await point.discover("foobar")
+		t.true(results.length === 1)
+		t.true(results[0].id.equals(clientA.peerId))
+	})
 
-// 	t.pass()
-// })
+	t.pass()
+})
 
 test.serial("auto registration and discovery", async (t) => {
 	const server = await getLibp2p(t, { port: 8883 }, { rendezvous: rendezvousServer({}) })
