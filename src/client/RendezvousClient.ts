@@ -215,7 +215,7 @@ export class RendezvousClient extends TypedEventEmitter<PeerDiscoveryEvents> imp
 		try {
 			return await callback({
 				discover: async (namespace, options = {}) => {
-					this.log.trace("discover(%s, %o)", namespace, options)
+					this.log("discover(%s, %o)", namespace, options)
 					source.push({
 						type: Message.MessageType.DISCOVER,
 						discover: { ns: namespace, limit: BigInt(options.limit ?? 0), cookie: new Uint8Array() },
@@ -254,7 +254,7 @@ export class RendezvousClient extends TypedEventEmitter<PeerDiscoveryEvents> imp
 					return peers
 				},
 				register: async (namespace, options = {}) => {
-					this.log.trace("register(%s, %o)", namespace, options)
+					this.log("register(%s, %o)", namespace, options)
 					const multiaddrs = options.multiaddrs ?? this.components.addressManager.getAnnounceAddrs()
 					const record = new PeerRecord({ peerId: this.components.peerId, multiaddrs })
 					const envelope = await RecordEnvelope.seal(record, this.components.privateKey)
@@ -282,7 +282,7 @@ export class RendezvousClient extends TypedEventEmitter<PeerDiscoveryEvents> imp
 					return { ttl: Number(ttl) }
 				},
 				unregister: async (namespace) => {
-					this.log.trace("unregister(%s)", namespace)
+					this.log("unregister(%s)", namespace)
 					source.push({
 						type: Message.MessageType.UNREGISTER,
 						unregister: { ns: namespace },

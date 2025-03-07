@@ -79,10 +79,13 @@ export class RendezvousServer implements Startable {
 	private handleIncomingStream: StreamHandler = ({ stream, connection }) => {
 		this.log("opened incoming rendezvous stream %s from peer %p", stream.id, connection.remotePeer)
 		const handle = (reqs: AsyncIterable<Message>) => this.handleMessages(connection.remotePeer, reqs)
-		pipe(stream, lp.decode, decodeMessages, handle, encodeMessages, lp.encode, stream).catch((err) => {
-			this.log.error("error handling requests: %O", err)
-			stream.abort(err)
-		})
+		pipe(stream, lp.decode, decodeMessages, handle, encodeMessages, lp.encode, stream).then(
+			() => this.log("closed incoming rendezvous stream %s", stream.id),
+			(err) => {
+				this.log.error("error handling requests: %O", err)
+				stream.abort(err)
+			},
+		)
 	}
 
 	private async *handleMessages(peerId: PeerId, reqs: AsyncIterable<Message>): AsyncIterable<Message> {
@@ -92,6 +95,8 @@ export class RendezvousServer implements Startable {
 				assert(req.register !== undefined, "invalid REGISTER message")
 				const { ns, signedPeerRecord, ttl } = req.register
 				assert(ns.length < 256, "invalid namespace")
+
+				this.log("REGISTER ns %s, ttl %d (%p)", ns, ttl, peerId)
 
 				const actualTTL = ttl === 0n ? defaultTTL : clamp(ttl, maxTTL)
 
@@ -111,11 +116,15 @@ export class RendezvousServer implements Startable {
 				const { ns } = req.unregister
 				assert(ns.length < 256, "invalid namespace")
 
+				this.log("UNREGISTER ns %s (%p)", ns, peerId)
+
 				this.store.unregister(ns, peerId)
 			} else if (req.type === Message.MessageType.DISCOVER) {
 				assert(req.discover !== undefined, "invalid DISCOVER message")
 				const { ns, limit, cookie } = req.discover
 				assert(ns.length < 256, "invalid namespace")
+
+				this.log("DISCOVER ns %s, limit %d (%p)", ns, limit, peerId)
 
 				const actualLimit = limit === 0n ? defaultLimit : clamp(limit, maxLimit)
 
