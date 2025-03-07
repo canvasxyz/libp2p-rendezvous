@@ -37,7 +37,7 @@ export class RegistrationStore {
 		this.db = new Database(path ?? ":memory:")
 		this.db.defaultSafeIntegers(true)
 		this.db.exec(
-			`CREATE TABLE registrations (
+			`CREATE TABLE IF NOT EXISTS registrations (
   		  id INTEGER PRIMARY KEY AUTOINCREMENT,
   			peer TEXT NOT NULL,
   			namespace TEXT NOT NULL,
@@ -46,9 +46,9 @@ export class RegistrationStore {
   		)`,
 		)
 
-		this.db.exec(`CREATE INDEX expirations ON registrations(expiration)`)
-		this.db.exec(`CREATE INDEX namespaces ON registrations(namespace, peer)`)
-		this.db.exec(`CREATE INDEX peers ON registrations(peer, namespace)`)
+		this.db.exec(`CREATE INDEX IF NOT EXISTS expirations ON registrations(expiration)`)
+		this.db.exec(`CREATE INDEX IF NOT EXISTS namespaces ON registrations(namespace, peer)`)
+		this.db.exec(`CREATE INDEX IF NOT EXISTS peers ON registrations(peer, namespace)`)
 
 		this.#gc = this.db.prepare(`DELETE FROM registrations WHERE expiration < :expiration`)
 
