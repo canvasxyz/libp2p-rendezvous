@@ -33,8 +33,8 @@ export interface RendezvousServerInit {
 export class RendezvousServer implements Startable {
 	public static protocol = "/canvas/rendezvous/1.0.0"
 
+	public readonly store: RegistrationStore
 	private readonly log = logger(`canvas:rendezvous:server`)
-	private readonly store: RegistrationStore
 
 	#started: boolean = false
 

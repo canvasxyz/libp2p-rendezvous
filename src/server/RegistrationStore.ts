@@ -13,8 +13,7 @@ export type DiscoverResult = {
 }
 
 export class RegistrationStore {
-	public readonly db: sqlite.Database
-
+	private readonly db: sqlite.Database
 	private readonly log = logger(`canvas:rendezvous:store`)
 
 	#interval = setInterval(() => this.gc(), 5 * 1000)
