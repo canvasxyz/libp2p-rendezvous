@@ -6,7 +6,6 @@ import { rendezvousServer } from "@canvas-js/libp2p-rendezvous/server"
 import { rendezvousClient } from "@canvas-js/libp2p-rendezvous/client"
 
 import { getLibp2p } from "./libp2p.js"
-import { multiaddr } from "@multiformats/multiaddr"
 
 test.serial("manual registration and discovery", async (t) => {
 	const server = await getLibp2p(t, { port: 8880 }, { rendezvous: rendezvousServer({}) })
