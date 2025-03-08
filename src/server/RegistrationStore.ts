@@ -80,9 +80,10 @@ export class RegistrationStore {
 	public async *iterate(
 		after: bigint = 0n,
 	): AsyncIterable<{ id: bigint; peerId: PeerId; namespace: string; multiaddrs: Multiaddr[]; expiration: bigint }> {
-		for (const { id, namespace, signed_peer_record, expiration } of this.#selectAll.iterate({ after })) {
+		for (const { id, peer, namespace, signed_peer_record, expiration } of this.#selectAll.iterate({ after })) {
 			const envelope = await RecordEnvelope.createFromProtobuf(signed_peer_record)
 			const { peerId, multiaddrs } = PeerRecord.createFromProtobuf(envelope.payload)
+			assert(peerId.toString() === peer, "invalid peer record - expected peerId.toString() === peer")
 			yield { id, peerId, namespace, multiaddrs, expiration }
 		}
 	}
