@@ -24,11 +24,11 @@ export class RegistrationStore {
 	#register: sqlite.Statement<{ peer: string; namespace: string; signed_peer_record: Uint8Array; expiration: bigint }>
 	#unregister: sqlite.Statement<{ peer: string; namespace: string }>
 	#discover: sqlite.Statement<
-		{ start: bigint; namespace: string; expiration: bigint; limit: bigint },
+		{ after: bigint; namespace: string; expiration: bigint; limit: bigint },
 		{ id: bigint; peer: string; signed_peer_record: Uint8Array; expiration: bigint }
 	>
 	#selectAll: sqlite.Statement<
-		{ start: bigint },
+		{ after: bigint },
 		{ id: bigint; peer: string; namespace: string; signed_peer_record: Uint8Array; expiration: bigint }
 	>
 
@@ -66,21 +66,21 @@ export class RegistrationStore {
 
 		this.#discover = this.db.prepare(
 			`SELECT id, peer, signed_peer_record, expiration FROM registrations
-			  WHERE id > :start AND namespace = :namespace AND expiration > :expiration
+			  WHERE id > :after AND namespace = :namespace AND expiration > :expiration
 				ORDER BY id DESC LIMIT :limit`,
 		)
 
 		this.#selectAll = this.db.prepare(
 			`SELECT id, peer, namespace, expiration FROM registrations
-			  WHERE id > :start
+			  WHERE id > :after
 				ORDER BY id ASC`,
 		)
 	}
 
 	public async *iterate(
-		start: bigint = 0n,
+		after: bigint = 0n,
 	): AsyncIterable<{ id: bigint; peerId: PeerId; namespace: string; multiaddrs: Multiaddr[]; expiration: bigint }> {
-		for (const { id, namespace, signed_peer_record, expiration } of this.#selectAll.iterate({ start })) {
+		for (const { id, namespace, signed_peer_record, expiration } of this.#selectAll.iterate({ after })) {
 			const envelope = await RecordEnvelope.createFromProtobuf(signed_peer_record)
 			const { peerId, multiaddrs } = PeerRecord.createFromProtobuf(envelope.payload)
 			yield { id, peerId, namespace, multiaddrs, expiration }
@@ -105,15 +105,15 @@ export class RegistrationStore {
 	}
 
 	public discover(namespace: string, limit: bigint, cookie: Uint8Array | null): DiscoverResult {
-		let start = 0n
+		let after = 0n
 		if (cookie !== null) {
 			const { buffer, byteOffset, byteLength } = cookie
 			assert(byteLength === 8, "invalid cookie")
-			start = new DataView(buffer, byteOffset, byteLength).getBigUint64(0)
+			after = new DataView(buffer, byteOffset, byteLength).getBigUint64(0)
 		}
 
 		const expiration = now()
-		const results = this.#discover.all({ start, namespace, expiration, limit })
+		const results = this.#discover.all({ after, namespace, expiration, limit })
 
 		let lastId = 0n
 		if (results.length > 0) {
