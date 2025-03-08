@@ -25,6 +25,7 @@ export class RegistrationStore {
 		{ start: bigint; namespace: string; expiration: bigint; limit: bigint },
 		{ id: bigint; peer: string; signed_peer_record: Uint8Array; expiration: bigint }
 	>
+	#selectAll: sqlite.Statement<{ start: bigint }, { id: bigint; peer: string; namespace: string; expiration: bigint }>
 
 	constructor(path: string | null = null) {
 		if (path !== null) {
@@ -37,7 +38,7 @@ export class RegistrationStore {
 		this.db.defaultSafeIntegers(true)
 		this.db.exec(
 			`CREATE TABLE IF NOT EXISTS registrations (
-  		  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  		  id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
   			peer TEXT NOT NULL,
   			namespace TEXT NOT NULL,
         signed_peer_record BLOB NOT NULL,
@@ -63,6 +64,16 @@ export class RegistrationStore {
 			  WHERE id > :start AND namespace = :namespace AND expiration > :expiration
 				ORDER BY id DESC LIMIT :limit`,
 		)
+
+		this.#selectAll = this.db.prepare(
+			`SELECT id, peer, namespace, expiration FROM registrations
+			  WHERE id > :start
+				ORDER BY id ASC`,
+		)
+	}
+
+	public *iterate(start?: number): Iterable<{ id: bigint; peer: string; namespace: string; expiration: bigint }> {
+		yield* this.#selectAll.iterate({ start: BigInt(start ?? 0) })
 	}
 
 	public register(namespace: string, peerId: PeerId, signedPeerRecord: Uint8Array, ttl: bigint) {
