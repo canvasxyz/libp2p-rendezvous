@@ -1,11 +1,10 @@
 import type { PeerId } from "@libp2p/interface"
-import { PeerRecord, RecordEnvelope } from "@libp2p/peer-record"
 import { logger } from "@libp2p/logger"
 import { Multiaddr } from "@multiformats/multiaddr"
 
 import Database, * as sqlite from "better-sqlite3"
 
-import { assert } from "./utils.js"
+import { assert, parseRecord } from "./utils.js"
 
 const now = () => BigInt(Math.ceil(Date.now() / 1000))
 
@@ -24,11 +23,15 @@ export class RegistrationStore {
 	#register: sqlite.Statement<{ peer: string; namespace: string; signed_peer_record: Uint8Array; expiration: bigint }>
 	#unregister: sqlite.Statement<{ peer: string; namespace: string }>
 	#discover: sqlite.Statement<
-		{ after: bigint; namespace: string; expiration: bigint; limit: bigint },
+		{ cursor: bigint; namespace: string; expiration: bigint; limit: bigint },
+		{ id: bigint; peer: string; signed_peer_record: Uint8Array; expiration: bigint }
+	>
+	#select: sqlite.Statement<
+		{ cursor: bigint; namespace: string },
 		{ id: bigint; peer: string; signed_peer_record: Uint8Array; expiration: bigint }
 	>
 	#selectAll: sqlite.Statement<
-		{ after: bigint },
+		{ cursor: bigint },
 		{ id: bigint; peer: string; namespace: string; signed_peer_record: Uint8Array; expiration: bigint }
 	>
 
@@ -66,25 +69,39 @@ export class RegistrationStore {
 
 		this.#discover = this.db.prepare(
 			`SELECT id, peer, signed_peer_record, expiration FROM registrations
-			  WHERE id > :after AND namespace = :namespace AND expiration > :expiration
+			  WHERE id > :cursor AND namespace = :namespace AND expiration > :expiration
 				ORDER BY id DESC LIMIT :limit`,
 		)
 
+		this.#select = this.db.prepare(
+			`SELECT id, peer, signed_peer_record, expiration FROM registrations
+			  WHERE id > :cursor AND namespace = :namespace
+				ORDER BY id ASC`,
+		)
+
 		this.#selectAll = this.db.prepare(
-			`SELECT id, peer, namespace, expiration FROM registrations
-			  WHERE id > :after
+			`SELECT id, peer, signed_peer_record, expiration, namespace FROM registrations
+			  WHERE id > :cursor
 				ORDER BY id ASC`,
 		)
 	}
 
 	public async *iterate(
-		after: bigint = 0n,
-	): AsyncIterable<{ id: bigint; peerId: PeerId; namespace: string; multiaddrs: Multiaddr[]; expiration: bigint }> {
-		for (const { id, peer, namespace, signed_peer_record, expiration } of this.#selectAll.iterate({ after })) {
-			const envelope = await RecordEnvelope.createFromProtobuf(signed_peer_record)
-			const { peerId, multiaddrs } = PeerRecord.createFromProtobuf(envelope.payload)
-			assert(peerId.toString() === peer, "invalid peer record - expected peerId.toString() === peer")
-			yield { id, peerId, namespace, multiaddrs, expiration }
+		options: { cursor?: bigint; namespace?: string } = {},
+	): AsyncIterable<{ id: bigint; peerId: PeerId; multiaddrs: Multiaddr[]; expiration: bigint; namespace: string }> {
+		const { cursor = 0n, namespace = null } = options
+		if (namespace === null) {
+			for (const { id, peer, signed_peer_record, expiration, namespace } of this.#selectAll.iterate({ cursor })) {
+				const { peerId, multiaddrs } = await parseRecord(signed_peer_record)
+				assert(peerId.toString() === peer, "invalid peer record - expected peerId.toString() === peer")
+				yield { id, peerId, multiaddrs, expiration, namespace }
+			}
+		} else {
+			for (const { id, peer, signed_peer_record, expiration } of this.#select.iterate({ cursor, namespace })) {
+				const { peerId, multiaddrs } = await parseRecord(signed_peer_record)
+				assert(peerId.toString() === peer, "invalid peer record - expected peerId.toString() === peer")
+				yield { id, peerId, multiaddrs, expiration, namespace }
+			}
 		}
 	}
 
@@ -106,17 +123,17 @@ export class RegistrationStore {
 	}
 
 	public discover(namespace: string, limit: bigint, cookie: Uint8Array | null): DiscoverResult {
-		let after = 0n
+		let cursor = 0n
 		if (cookie !== null) {
 			const { buffer, byteOffset, byteLength } = cookie
 			assert(byteLength === 8, "invalid cookie")
-			after = new DataView(buffer, byteOffset, byteLength).getBigUint64(0)
+			cursor = new DataView(buffer, byteOffset, byteLength).getBigUint64(0)
 		}
 
 		const expiration = now()
-		const results = this.#discover.all({ after, namespace, expiration, limit })
+		const results = this.#discover.all({ cursor, namespace, expiration, limit })
 
-		let lastId = 0n
+		let lastId = cursor
 		if (results.length > 0) {
 			lastId = results[results.length - 1].id
 		}

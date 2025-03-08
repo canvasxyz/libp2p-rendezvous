@@ -94,7 +94,7 @@ export class RendezvousServer implements Startable {
 			if (req.type === Message.MessageType.REGISTER) {
 				assert(req.register !== undefined, "invalid REGISTER message")
 				const { ns, signedPeerRecord, ttl } = req.register
-				assert(ns.length < 256, "invalid namespace")
+				assert(ns.length < 256, "invalid namespace (expected ns.length < 256)")
 
 				this.log("REGISTER ns %s, ttl %d (%p)", ns, ttl, peerId)
 
@@ -114,7 +114,7 @@ export class RendezvousServer implements Startable {
 			} else if (req.type === Message.MessageType.UNREGISTER) {
 				assert(req.unregister !== undefined, "invalid UNREGISTER message")
 				const { ns } = req.unregister
-				assert(ns.length < 256, "invalid namespace")
+				assert(ns.length < 256, "invalid namespace (expected ns.length < 256)")
 
 				this.log("UNREGISTER ns %s (%p)", ns, peerId)
 
@@ -122,7 +122,7 @@ export class RendezvousServer implements Startable {
 			} else if (req.type === Message.MessageType.DISCOVER) {
 				assert(req.discover !== undefined, "invalid DISCOVER message")
 				const { ns, limit, cookie } = req.discover
-				assert(ns.length < 256, "invalid namespace")
+				assert(ns.length < 256, "invalid namespace (expected ns.length < 256)")
 
 				this.log("DISCOVER ns %s, limit %d (%p)", ns, limit, peerId)
 
