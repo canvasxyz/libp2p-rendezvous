@@ -1,5 +1,7 @@
 import type { PeerId } from "@libp2p/interface"
+import { PeerRecord, RecordEnvelope } from "@libp2p/peer-record"
 import { logger } from "@libp2p/logger"
+import { Multiaddr } from "@multiformats/multiaddr"
 
 import Database, * as sqlite from "better-sqlite3"
 
@@ -25,7 +27,10 @@ export class RegistrationStore {
 		{ start: bigint; namespace: string; expiration: bigint; limit: bigint },
 		{ id: bigint; peer: string; signed_peer_record: Uint8Array; expiration: bigint }
 	>
-	#selectAll: sqlite.Statement<{ start: bigint }, { id: bigint; peer: string; namespace: string; expiration: bigint }>
+	#selectAll: sqlite.Statement<
+		{ start: bigint },
+		{ id: bigint; peer: string; namespace: string; signed_peer_record: Uint8Array; expiration: bigint }
+	>
 
 	constructor(path: string | null = null) {
 		if (path !== null) {
@@ -72,8 +77,14 @@ export class RegistrationStore {
 		)
 	}
 
-	public *iterate(start?: number): Iterable<{ id: bigint; peer: string; namespace: string; expiration: bigint }> {
-		yield* this.#selectAll.iterate({ start: BigInt(start ?? 0) })
+	public async *iterate(
+		start: bigint = 0n,
+	): AsyncIterable<{ id: bigint; peerId: PeerId; namespace: string; multiaddrs: Multiaddr[]; expiration: bigint }> {
+		for (const { id, namespace, signed_peer_record, expiration } of this.#selectAll.iterate({ start })) {
+			const envelope = await RecordEnvelope.createFromProtobuf(signed_peer_record)
+			const { peerId, multiaddrs } = PeerRecord.createFromProtobuf(envelope.payload)
+			yield { id, peerId, namespace, multiaddrs, expiration }
+		}
 	}
 
 	public register(namespace: string, peerId: PeerId, signedPeerRecord: Uint8Array, ttl: bigint) {
