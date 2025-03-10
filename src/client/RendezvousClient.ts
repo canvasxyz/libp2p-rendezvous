@@ -176,10 +176,12 @@ export class RendezvousClient extends TypedEventEmitter<PeerDiscoveryEvents> imp
 
 	#schedule(peer: string, addrs: Multiaddr[], interval: number) {
 		clearTimeout(this.registerIntervals.get(peer))
-		this.registerIntervals.set(
-			peer,
-			setTimeout(() => this.#register(peer, addrs), interval),
-		)
+		if (this.#started) {
+			this.registerIntervals.set(
+				peer,
+				setTimeout(() => this.#register(peer, addrs), interval),
+			)
+		}
 	}
 
 	async #register(peer: string, addrs: Multiaddr[], autoRefresh = true) {
