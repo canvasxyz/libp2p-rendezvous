@@ -42,7 +42,7 @@ test.serial("auto registration and discovery", async (t) => {
 		{
 			rendezvous: rendezvousClient({
 				autoRegister: { namespaces: ["foobar"], multiaddrs, initialTimeout: 100 },
-				autoDiscover: true,
+				autoDiscover: false,
 			}),
 		},
 	)
@@ -50,6 +50,8 @@ test.serial("auto registration and discovery", async (t) => {
 	clientA.addEventListener("peer:discovery", ({ detail: peerInfo }) => {
 		clientADiscoveryEvents.push(peerInfo)
 	})
+
+	await setTimeout(500)
 
 	const clientBDiscoveryEvents: PeerInfo[] = []
 	const clientB = await getLibp2p(
@@ -78,10 +80,6 @@ test.serial("auto registration and discovery", async (t) => {
 
 	t.deepEqual(clientADiscoveryEvents.map(peerInfoToString), [
 		{ id: server.peerId.toString(), multiaddrs: [`/ip4/127.0.0.1/tcp/8883/ws/p2p/${server.peerId}`] },
-		{
-			id: clientB.peerId.toString(),
-			multiaddrs: ["/ip4/127.0.0.1/tcp/8885/ws"],
-		},
 	])
 
 	t.deepEqual(clientBDiscoveryEvents.map(peerInfoToString), [

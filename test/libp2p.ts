@@ -5,7 +5,6 @@ import { generateKeyPair } from "@libp2p/crypto/keys"
 import { yamux } from "@chainsafe/libp2p-yamux"
 import { noise } from "@chainsafe/libp2p-noise"
 import { webSockets } from "@libp2p/websockets"
-import { all } from "@libp2p/websockets/filters"
 import { Identify, identify } from "@libp2p/identify"
 import { Libp2p, ServiceMap } from "@libp2p/interface"
 
