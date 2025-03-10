@@ -16,7 +16,8 @@ import { Registrar, AddressManager, ConnectionManager } from "@libp2p/interface-
 import { logger } from "@libp2p/logger"
 import { peerIdFromPublicKey } from "@libp2p/peer-id"
 import { PeerRecord, RecordEnvelope } from "@libp2p/peer-record"
-import { Multiaddr } from "@multiformats/multiaddr"
+import { multiaddr, Multiaddr } from "@multiformats/multiaddr"
+import { P2P } from "@multiformats/mafmt"
 
 import * as lp from "it-length-prefixed"
 import { pipe } from "it-pipe"
@@ -42,45 +43,75 @@ export type RendezvousClientComponents = {
 }
 
 export interface RendezvousClientInit {
-	/** namespaces to register automatically with all peers that support the rendezvous server protocol */
-	autoRegister?: string[] | null
-	/** TTL to use for automatic registrations */
-	autoRegisterTTL?: number
-	/** discover peers automatically and add them to the local peer store */
+	autoRegister?: {
+		namespaces: string[]
+		multiaddrs: string[]
+		/** registration TTL, in seconds */
+		ttl?: number
+		/** initial timeout before connecting, in milliseconds */
+		initialTimeout?: number
+		/** retry interval between failed connections, in milliseconds */
+		retryInterval?: number
+	}
+	/** auto-discover registered namespaces, and add them to the peer store */
 	autoDiscover?: boolean
-	/** run auto distorvery at least this often */
+	/** auto-discovery inverval, in milliseconds */
 	autoDiscoverInterval?: number
-	connectionFilter?: (connection: Connection) => boolean
 }
+
+const DEFAULT_RENDEZVOUS_REGISTRATION_TIMEOUT = 1000
+const DEFAULT_RENDEZVOUS_REGISTRATION_RETRY_INTERVAL = 5000
+
+const TTL_MARGIN = 30
 
 export class RendezvousClient extends TypedEventEmitter<PeerDiscoveryEvents> implements Startable {
 	public static protocol = "/canvas/rendezvous/1.0.0"
 
 	private readonly log = logger("canvas:rendezvous:client")
-	private readonly serverPeers = new Map<string, PeerId>()
+	private readonly peers = new Map<string, PeerId>()
 	private readonly registerIntervals = new Map<string, NodeJS.Timeout>()
+	private readonly controller = new AbortController()
 
-	private readonly autoRegister: string[]
+	private readonly autoRegisterNamespaces: string[]
+	// private readonly autoRegisterMultiaddrs: string[]
+	private readonly autoRegisterPeers: Map<string, Multiaddr[]>
 	private readonly autoRegisterTTL: number | null
+	private readonly autoRegisterInitialTimeout: number
+	private readonly autoRegisterRetryInterval: number
 	private readonly autoDiscover: boolean
 	private readonly autoDiscoverInterval: number
-	private readonly connectionFilter: (connection: Connection) => boolean
 
 	#started: boolean = false
 	#topologyId: string | null = null
-
-	#announceAddrs: Multiaddr[] = []
+	#timer: NodeJS.Timeout | null = null
 
 	constructor(
 		private readonly components: RendezvousClientComponents,
 		init: RendezvousClientInit,
 	) {
 		super()
-		this.autoRegister = init.autoRegister ?? []
-		this.autoRegisterTTL = init.autoRegisterTTL ?? null
+		this.autoRegisterNamespaces = init.autoRegister?.namespaces ?? []
+		this.autoRegisterPeers = new Map()
+		for (const addr of init.autoRegister?.multiaddrs ?? []) {
+			const ma = multiaddr(addr)
+			const peerId = multiaddr(addr).getPeerId()
+			assert(peerId !== null, "invalid rendezvous multiaddr: expected /p2p/... suffix")
+			assert(P2P.matches(ma), "invalid rendezvous multiaddr")
+			const peer = peerId.toString()
+			assert(addr.endsWith(`/p2p/${peer}`), "invalid rendezvous multiaddr")
+			const addrs = this.autoRegisterPeers.get(peer)
+			if (addrs === undefined) {
+				this.autoRegisterPeers.set(peer, [ma])
+			} else {
+				addrs.push(ma)
+			}
+		}
+
+		this.autoRegisterTTL = init.autoRegister?.ttl ?? null
+		this.autoRegisterInitialTimeout = init.autoRegister?.initialTimeout ?? DEFAULT_RENDEZVOUS_REGISTRATION_TIMEOUT
+		this.autoRegisterRetryInterval = init.autoRegister?.retryInterval ?? DEFAULT_RENDEZVOUS_REGISTRATION_RETRY_INTERVAL
 		this.autoDiscover = init.autoDiscover ?? true
 		this.autoDiscoverInterval = init.autoDiscoverInterval ?? Infinity
-		this.connectionFilter = init.connectionFilter ?? ((connection) => true)
 	}
 
 	readonly [peerDiscoverySymbol] = this
@@ -96,99 +127,120 @@ export class RendezvousClient extends TypedEventEmitter<PeerDiscoveryEvents> imp
 
 		this.#topologyId = await this.components.registrar.register(RendezvousClient.protocol, {
 			onConnect: (peerId, connection) => {
-				if (this.connectionFilter(connection)) {
-					this.serverPeers.set(peerId.toString(), peerId)
-					this.#register(connection)
-				}
+				this.peers.set(peerId.toString(), peerId)
 			},
 			onDisconnect: (peerId) => {
-				this.serverPeers.delete(peerId.toString())
+				this.peers.delete(peerId.toString())
 			},
 		})
 	}
 
-	public async start() {
+	public start() {
 		this.log("start")
 		this.#started = true
 	}
 
-	public async afterStart() {
+	public afterStart() {
 		this.log("afterStart")
+
+		this.log("waiting %s ms before dialing rendezvous servers", this.autoRegisterInitialTimeout)
+		for (const [peer, addrs] of this.autoRegisterPeers) {
+			this.#schedule(peer, addrs, this.autoRegisterInitialTimeout)
+		}
 	}
 
-	public async beforeStop() {
+	public beforeStop() {
 		this.log("beforeStop")
+		clearTimeout(this.#timer ?? undefined)
+
+		this.controller.abort()
 		if (this.#topologyId !== null) {
 			this.components.registrar.unregister(this.#topologyId)
 		}
 
 		for (const intervalId of this.registerIntervals.values()) {
-			clearInterval(intervalId)
+			clearTimeout(intervalId)
 		}
 
 		this.registerIntervals.clear()
 	}
 
-	public async stop() {
+	public stop() {
 		this.log("stop")
 		this.#started = false
 	}
 
-	public afterStop(): void {}
+	public afterStop() {
+		this.log("afterStop")
+	}
 
-	async #register(connection: Connection) {
-		const peerId = connection.remotePeer
+	#schedule(peer: string, addrs: Multiaddr[], interval: number) {
+		clearTimeout(this.registerIntervals.get(peer))
+		this.registerIntervals.set(
+			peer,
+			setTimeout(() => this.#register(peer, addrs), interval),
+		)
+	}
 
-		if (this.autoRegister.length === 0) {
+	async #register(peer: string, addrs: Multiaddr[], autoRefresh = true) {
+		this.log("initiating registration with peer %s", peer)
+
+		let connection: Connection
+		try {
+			connection = await this.components.connectionManager.openConnection(addrs)
+		} catch (err) {
+			this.log.error("failed to connect to peer %s at %o", peer, addrs)
+			this.log.error("scheduling another connection attempt in %s ms", this.autoRegisterRetryInterval)
+			this.#schedule(peer, addrs, this.autoRegisterRetryInterval)
 			return
 		}
 
-		const minTTL = await this.#connect(connection, async (point) => {
-			let minTTL = this.autoDiscoverInterval
+		const peerId = connection.remotePeer
+		assert(peerId.toString() === peer, "got unexpected remote peer id")
 
-			for (const ns of this.autoRegister) {
-				const multiaddrs = this.components.addressManager.getAnnounceAddrs()
+		const interval = await this.#connect(connection, async (point) => {
+			let interval = this.autoDiscoverInterval
+
+			const multiaddrs = this.components.addressManager.getAnnounceAddrs()
+			for (const ns of this.autoRegisterNamespaces) {
+				// register
 				if (multiaddrs.length > 0) {
-					const { ttl } = await point.register(ns, { multiaddrs, ttl: this.autoRegisterTTL })
-					minTTL = Math.min(minTTL, ttl)
-					this.log("successfully registered %s with %p (ttl %d)", ns, peerId, ttl)
+					try {
+						const { ttl } = await point.register(ns, { multiaddrs, ttl: this.autoRegisterTTL })
+						const refreshInterval = Math.max(ttl - TTL_MARGIN, TTL_MARGIN) * 1000
+						interval = Math.min(interval, refreshInterval)
+						this.log("successfully registered %s with %p (ttl %d)", ns, peerId, ttl)
+					} catch (err) {
+						this.log.error("failed to register %s with %s: %O", ns, peer, err)
+						interval = Math.min(interval, this.autoRegisterRetryInterval)
+					}
 				} else {
 					this.log("skipping registration because no announce addresses were configured")
 				}
 
+				// discover
 				if (this.autoDiscover) {
-					const results = await point.discover(ns)
-					for (const peerData of results) {
-						if (peerData.id.equals(this.components.peerId)) {
-							continue
-						}
+					try {
+						const results = await point.discover(ns)
+						for (const peerData of results) {
+							if (peerData.id.equals(this.components.peerId)) {
+								continue
+							}
 
-						await this.components.peerStore.merge(peerData.id, peerData)
-						this.safeDispatchEvent("peer", { detail: peerData })
+							await this.components.peerStore.merge(peerData.id, peerData)
+							this.safeDispatchEvent("peer", { detail: peerData })
+						}
+					} catch (err) {
+						this.log.error("failed to discover %s from %s: %O", ns, peer, err)
 					}
 				}
 			}
 
-			return minTTL
+			return interval
 		})
 
-		if (minTTL === Infinity) {
-			return
-		}
-
-		clearInterval(this.registerIntervals.get(peerId.toString()))
-		this.registerIntervals.set(
-			peerId.toString(),
-			setTimeout(() => {
-				this.registerIntervals.delete(peerId.toString())
-
-				this.log("refreshing registration with %p", peerId)
-				this.components.connectionManager.openConnection(peerId).then(
-					(connection) => this.#register(connection),
-					(err) => this.log.error("failed to open connection to peer %p: %O", peerId, err),
-				)
-			}, minTTL * 1000),
-		)
+		this.log("scheduling next registration in %s ms", interval)
+		this.#schedule(peer, addrs, interval)
 	}
 
 	public async connect<T>(
