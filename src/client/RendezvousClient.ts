@@ -156,7 +156,7 @@ export class RendezvousClient extends TypedEventEmitter<PeerDiscoveryEvents> imp
 		this.log("waiting %s ms before dialing rendezvous servers", this.autoRegisterInitialTimeout)
 		this.#timer = setTimeout(() => {
 			for (const [peer, addrs] of this.autoRegisterPeers) {
-				this.#openConnection(peer)
+				this.#openConnection(peer).catch((err) => this.log.error("failed to open connection: %O", err))
 			}
 		}, this.autoRegisterInitialTimeout)
 	}
@@ -210,7 +210,14 @@ export class RendezvousClient extends TypedEventEmitter<PeerDiscoveryEvents> imp
 		if (this.#started) {
 			this.registerIntervals.set(
 				peer,
-				setTimeout(() => this.#openConnection(peer).then((connection) => this.#register(connection, true)), interval),
+				setTimeout(
+					() =>
+						this.#openConnection(peer).then(
+							(connection) => this.#register(connection, true),
+							(err) => this.log.error("failed to open connection: %O", err),
+						),
+					interval,
+				),
 			)
 		}
 	}
