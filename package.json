@@ -1,6 +1,6 @@
 {
 	"name": "@canvas-js/libp2p-rendezvous",
-	"version": "0.4.0",
+	"version": "0.4.1",
 	"type": "module",
 	"author": "Canvas Technologies, Inc. (https://canvas.xyz)",
 	"main": "lib/index.js",
