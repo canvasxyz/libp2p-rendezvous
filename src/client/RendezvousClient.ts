@@ -267,8 +267,10 @@ export class RendezvousClient extends TypedEventEmitter<PeerDiscoveryEvents> imp
 			return interval
 		})
 
-		this.log("scheduling next registration in %s ms", interval)
-		this.#schedule(peerId.toString(), interval)
+		if (interval < Infinity) {
+			this.log("scheduling next registration in %s ms", interval)
+			this.#schedule(peerId.toString(), interval)
+		}
 	}
 
 	public async connect<T>(
