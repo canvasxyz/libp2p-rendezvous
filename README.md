@@ -9,6 +9,9 @@ JavaScript implementation of the libp2p [rendezvous protocol](https://github.com
 - [Install](#install)
 - [Usage](#usage)
 - [API](#api)
+  - [`@canvas-js/libp2p-rendezvous/client`](#canvas-js-libp2p-rendezvous-client)
+  - [`@canvas-js/libp2p-rendezvous/server`](#canvas-js-libp2p-rendezvous-server)
+- [Testing](#testing)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -42,26 +45,31 @@ The `path` is optional; an in-memory SQLite database will be used if it is `null
 
 ### Client
 
-Then add the rendezvous client service to the peers that need to find each other:
+Add the rendezvous client service to the peers that need to find each other:
 
 ```ts
-import { bootstrap } from "@libp2p/bootstrap"
 import { rendezvousClient } from "@canvas-js/libp2-rendezvous/client"
 
 const libp2p = await createLibp2p({
   // ...
-  peerDiscovery: [bootstrap(["/dns4/my-rendezvous-server/..."])]
   services: {
     // ...
     rendezvous: rendezvousClient({
-      autoRegister: ["topic-a", "topic-b"],
+      autoRegister: {
+        namespaces: ["topic-a", "topic-b"],
+        multiaddrs: ["/dns4/my-rendezvous-server/..."],
+      },
       autoDiscover: true,
-    })
+    }),
   },
 })
 ```
 
-Providing namespaces to `autoRegister` and enabling `autoDiscovery` will cause the client to automatically register those namespaces with every rendezvous server it connects to (ie every peer supporting the rendezvous protocol), and automatically renew its regsitrations when they expire, re-connecting to the server if necessary.
+Providing namespaces and multiaddrs to `autoRegister` will cause the client to automatically dial those servers on startup, effectively replacing the `@libp2p/bootstrap` service.
+
+The client service will then register each namespaces with all of the peers that support the rendezvous server protocol, track the returned TTLs, and automatically renew the registrations shortly before expiration, re-connecting to each peer if necessary.
+
+The `autoDiscovery` feature is enabled by default, which will query for other peers registered under each of the provided namespaces, and emit the results as peer discovery events.
 
 Alternatively, you can choose to manually connect to a server and make `register`, `unregister`, and `discover` calls yourself:
 
@@ -71,48 +79,52 @@ await libp2p.services.rendezvous.connect(serverPeerId, async (point) => {
   await point.register("topic-a")
   await point.unregister("topic-b")
   const peers = await point.discover("topic-c")
-  // peers discovered manually are not automatically added to the peerStore
+  // peers: { id: PeerId; addresses: { multiaddr: Multiaddr }[]; ... }[]
 })
 ```
 
 ## API
 
-```ts
-// @canvas-js/libp2p-rendezvous/client
+### `@canvas-js/libp2p-rendezvous/client`
 
+```ts
 import type { TypedEventTarget, Libp2pEvents, PeerId, PeerStore, Peer, Connection } from "@libp2p/interface"
 import type { Registrar, AddressManager, ConnectionManager } from "@libp2p/interface-internal"
 import type { Multiaddr } from "@multiformats/multiaddr"
 
 export interface RendezvousPoint {
   discover(namespace: string, options?: { limit?: number }): Promise<Peer[]>
-  register(namespace: string, options?: { ttl?: number }): Promise<{ ttl: number }>
+  register(namespace: string, options?: { ttl?: number | null; multiaddrs?: Multiaddr[] }): Promise<{ ttl: number }>
   unregister(namespace: string): Promise<void>
 }
 
 export type RendezvousClientComponents = {
-  events: TypedEventTarget<Libp2pEvents>
-  peerId: PeerId
-  peerStore: PeerStore
-  registrar: Registrar
-  addressManager: AddressManager
-  connectionManager: ConnectionManager
+  /** internal libp2p components */
 }
 
 export interface RendezvousClientInit {
-  /**
-   * namespace or array of namespaces to register automatically
-   * with all peers that support the rendezvous server protocol
-   */
-  autoRegister?: string[] | null
+  autoRegister?: {
+    /** namespaces to auto-register */
+    namespaces: string[]
+    /** rendezvous point multiaddrs */
+    multiaddrs: string[]
+
+    /** registration TTL, in seconds */
+    ttl?: number
+    /** initial timeout before connecting, in milliseconds */
+    initialTimeout?: number
+    /** retry interval between failed connections, in milliseconds */
+    retryInterval?: number
+  }
+
+  /** auto-discover registered namespaces, and add them to the peer store */
   autoDiscover?: boolean
-  connectionFilter?: (connection: Connection) => boolean
+  /** auto-discovery inverval, in milliseconds */
+  autoDiscoverInterval?: number
 }
 
 export declare class RendezvousClient {
   public static protocol = "/canvas/rendezvous/1.0.0"
-
-  public constructor(components: RendezvousClientComponents, init: RendezvousClientInit)
 
   public connect<T>(
     server: PeerId | Multiaddr | Multiaddr[],
@@ -125,19 +137,14 @@ export declare const rendezvousClient: (
 ) => (components: RendezvousClientComponents) => RendezvousClient
 ```
 
-```ts
-// @canvas-js/libp2p-rendezvous/server
+### `@canvas-js/libp2p-rendezvous/server`
 
+```ts
 import { TypedEventTarget, Libp2pEvents, PeerId, PeerStore } from "@libp2p/interface"
 import { Registrar, AddressManager, ConnectionManager } from "@libp2p/interface-internal"
 
 export type RendezvousServerComponents = {
-  events: TypedEventTarget<Libp2pEvents>
-  peerId: PeerId
-  peerStore: PeerStore
-  registrar: Registrar
-  addressManager: AddressManager
-  connectionManager: ConnectionManager
+  /** internal libp2p components */
 }
 
 export interface RendezvousServerInit {
@@ -153,6 +160,14 @@ export declare class RendezvousServer implements Startable {
 export declare const rendezvousServer: (
   init?: RendezvousServerInit,
 ) => (components: RendezvousServerComponents) => RendezvousServer
+```
+
+## Testing
+
+Tests use [AVA](https://github.com/avajs/ava) and live in the [test](https://github.com/canvas-js/libp2p-rendezvous/blob/main/test) directory.
+
+```
+npm run test
 ```
 
 ## Contributing

@@ -48,6 +48,7 @@ export interface RendezvousClientInit {
 		namespaces: string[]
 		/** rendezvous point multiaddrs */
 		multiaddrs: string[]
+
 		/** registration TTL, in seconds */
 		ttl?: number
 		/** initial timeout before connecting, in milliseconds */
@@ -55,6 +56,7 @@ export interface RendezvousClientInit {
 		/** retry interval between failed connections, in milliseconds */
 		retryInterval?: number
 	}
+
 	/** auto-discover registered namespaces, and add them to the peer store */
 	autoDiscover?: boolean
 	/** auto-discovery inverval, in milliseconds */
@@ -64,6 +66,7 @@ export interface RendezvousClientInit {
 const DEFAULT_TIMEOUT = 1000
 const DEFAULT_RETRY_INTERVAL = 10000
 
+/** initiate registration renewal within this margin of expiration */
 const TTL_MARGIN = 30
 
 export class RendezvousClient extends TypedEventEmitter<PeerDiscoveryEvents> implements Startable {
@@ -82,8 +85,8 @@ export class RendezvousClient extends TypedEventEmitter<PeerDiscoveryEvents> imp
 	private readonly autoDiscoverInterval: number
 	private readonly retryInterval: number
 
-	#started: boolean = false
 	#topologyId: string | null = null
+	#started: boolean = false
 	#timer: NodeJS.Timeout | null = null
 
 	constructor(
@@ -134,7 +137,7 @@ export class RendezvousClient extends TypedEventEmitter<PeerDiscoveryEvents> imp
 				if (this.autoRegisterPeers.has(peer) && !this.registerIntervals.has(peer)) {
 					this.registerIntervals.set(
 						peer,
-						setTimeout(() => this.#register(connection, true), 0),
+						setTimeout(() => this.#register(connection), 0),
 					)
 				}
 			},
@@ -213,7 +216,7 @@ export class RendezvousClient extends TypedEventEmitter<PeerDiscoveryEvents> imp
 				setTimeout(
 					() =>
 						this.#openConnection(peer).then(
-							(connection) => this.#register(connection, true),
+							(connection) => this.#register(connection),
 							(err) => this.log.error("failed to open connection: %O", err),
 						),
 					interval,
@@ -222,7 +225,7 @@ export class RendezvousClient extends TypedEventEmitter<PeerDiscoveryEvents> imp
 		}
 	}
 
-	async #register(connection: Connection, autoRenew = true) {
+	async #register(connection: Connection) {
 		const peerId = connection.remotePeer
 		this.log("initiating registration with peer %p", peerId)
 
