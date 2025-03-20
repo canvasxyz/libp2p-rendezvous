@@ -258,7 +258,7 @@ export class RendezvousClient extends TypedEventEmitter<PeerDiscoveryEvents> imp
 								continue
 							}
 
-							await this.components.peerStore.merge(peerData.id, peerData)
+							await this.components.peerStore.patch(peerData.id, peerData)
 							this.safeDispatchEvent("peer", { detail: peerData })
 						}
 					} catch (err) {
