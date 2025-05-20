@@ -79,11 +79,11 @@ test.serial("auto registration and discovery", async (t) => {
 	}
 
 	t.deepEqual(clientADiscoveryEvents.map(peerInfoToString), [
-		{ id: server.peerId.toString(), multiaddrs: [`/ip4/127.0.0.1/tcp/8883/ws/p2p/${server.peerId}`] },
+		{ id: server.peerId.toString(), multiaddrs: ["/ip4/127.0.0.1/tcp/8883/ws"] },
 	])
 
 	t.deepEqual(clientBDiscoveryEvents.map(peerInfoToString), [
-		{ id: server.peerId.toString(), multiaddrs: [`/ip4/127.0.0.1/tcp/8883/ws/p2p/${server.peerId}`] },
+		{ id: server.peerId.toString(), multiaddrs: ["/ip4/127.0.0.1/tcp/8883/ws"] },
 		{
 			id: clientA.peerId.toString(),
 			multiaddrs: ["/ip4/127.0.0.1/tcp/8884/ws"],
