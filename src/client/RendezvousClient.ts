@@ -129,6 +129,16 @@ export class RendezvousClient extends TypedEventEmitter<PeerDiscoveryEvents> imp
 	public async beforeStart() {
 		this.log("beforeStart")
 
+		this.components.events.addEventListener("self:peer:update", ({ detail: { peer, previous } }) => {
+			const previousAddresses = previous?.addresses ?? []
+			const hasPreviousAddress = (addr: Multiaddr) => previousAddresses.some((prev) => prev.multiaddr.equals(addr))
+			if (peer.addresses.some((address) => !hasPreviousAddress(address.multiaddr))) {
+				for (const peerId of this.registerIntervals.keys()) {
+					this.#schedule(peerId, 0)
+				}
+			}
+		})
+
 		this.#topologyId = await this.components.registrar.register(RendezvousClient.protocol, {
 			onConnect: (peerId, connection) => {
 				this.log("connected to %p", peerId)
@@ -192,8 +202,8 @@ export class RendezvousClient extends TypedEventEmitter<PeerDiscoveryEvents> imp
 			this.components.registrar.unregister(this.#topologyId)
 		}
 
-		for (const intervalId of this.registerIntervals.values()) {
-			clearTimeout(intervalId)
+		for (const timeoutId of this.registerIntervals.values()) {
+			clearTimeout(timeoutId)
 		}
 
 		this.registerIntervals.clear()
@@ -210,18 +220,18 @@ export class RendezvousClient extends TypedEventEmitter<PeerDiscoveryEvents> imp
 
 	#schedule(peer: string, interval: number) {
 		clearTimeout(this.registerIntervals.get(peer))
+
 		if (this.#started) {
-			this.registerIntervals.set(
-				peer,
-				setTimeout(
-					() =>
-						this.#openConnection(peer).then(
-							(connection) => this.#register(connection),
-							(err) => this.log.error("failed to open connection: %O", err),
-						),
-					interval,
-				),
+			const timeoutId = setTimeout(
+				() =>
+					this.#openConnection(peer).then(
+						(connection) => this.#register(connection),
+						(err) => this.log.error("failed to open connection: %O", err),
+					),
+				interval,
 			)
+
+			this.registerIntervals.set(peer, timeoutId)
 		}
 	}
 
@@ -232,7 +242,8 @@ export class RendezvousClient extends TypedEventEmitter<PeerDiscoveryEvents> imp
 		const interval = await this.#connect(connection, async (point) => {
 			let interval = this.autoDiscoverInterval
 
-			const multiaddrs = this.components.addressManager.getAnnounceAddrs()
+			const multiaddrs = this.components.addressManager.getAddresses()
+
 			for (const ns of this.autoRegisterNamespaces) {
 				// register
 				if (multiaddrs.length > 0) {
@@ -246,7 +257,7 @@ export class RendezvousClient extends TypedEventEmitter<PeerDiscoveryEvents> imp
 						interval = Math.min(interval, this.retryInterval)
 					}
 				} else {
-					this.log("skipping registration because no announce addresses were configured")
+					this.log("skipping registration because no addresses were configured")
 				}
 
 				// discover
@@ -343,7 +354,11 @@ export class RendezvousClient extends TypedEventEmitter<PeerDiscoveryEvents> imp
 				},
 				register: async (namespace, options = {}) => {
 					this.log("register(%s, %o)", namespace, options)
-					const multiaddrs = options.multiaddrs ?? this.components.addressManager.getAnnounceAddrs()
+					const multiaddrs = options.multiaddrs ?? this.components.addressManager.getAddresses()
+					if (multiaddrs.length === 0) {
+						throw new Error("no multiaddrs found")
+					}
+
 					const record = new PeerRecord({ peerId: this.components.peerId, multiaddrs })
 					const envelope = await RecordEnvelope.seal(record, this.components.privateKey)
 					const signedPeerRecord = envelope.marshal()
