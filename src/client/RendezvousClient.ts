@@ -340,6 +340,11 @@ export class RendezvousClient extends TypedEventEmitter<PeerDiscoveryEvents> imp
 						const { peerId, multiaddrs } = PeerRecord.createFromProtobuf(envelope.payload)
 						assert(peerIdFromPublicKey(envelope.publicKey).equals(peerId), "invalid peer id in registration")
 
+						if (peerId.equals(this.components.peerId)) {
+							this.log("discovered self")
+							continue
+						}
+
 						this.log("discovered %p on %s with addresses %o", peerId, ns, multiaddrs)
 
 						const peer = await this.components.peerStore.merge(peerId, {
