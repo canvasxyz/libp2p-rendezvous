@@ -4,7 +4,8 @@ import { Multiaddr } from "@multiformats/multiaddr"
 
 import Database, * as sqlite from "better-sqlite3"
 
-import { assert, parseRecord } from "./utils.js"
+import { assert, decodePeerRecord } from "./utils.js"
+import { peerIdFromString } from "@libp2p/peer-id"
 
 const now = () => BigInt(Math.ceil(Date.now() / 1000))
 
@@ -23,7 +24,7 @@ export class RegistrationStore {
 	#register: sqlite.Statement<{ peer: string; namespace: string; signed_peer_record: Uint8Array; expiration: bigint }>
 	#unregister: sqlite.Statement<{ peer: string; namespace: string }>
 	#discover: sqlite.Statement<
-		{ cursor: bigint; namespace: string; expiration: bigint; limit: bigint },
+		{ cursor: bigint; namespace: string; expiration: bigint },
 		{ id: bigint; peer: string; signed_peer_record: Uint8Array; expiration: bigint }
 	>
 	#select: sqlite.Statement<
@@ -70,7 +71,7 @@ export class RegistrationStore {
 		this.#discover = this.db.prepare(
 			`SELECT id, peer, signed_peer_record, expiration FROM registrations
 			  WHERE id > :cursor AND namespace = :namespace AND expiration > :expiration
-				ORDER BY id DESC LIMIT :limit`,
+				ORDER BY id DESC`,
 		)
 
 		this.#select = this.db.prepare(
@@ -92,13 +93,13 @@ export class RegistrationStore {
 		const { cursor = 0n, namespace = null } = options
 		if (namespace === null) {
 			for (const { id, peer, signed_peer_record, expiration, namespace } of this.#selectAll.iterate({ cursor })) {
-				const { peerId, multiaddrs } = await parseRecord(signed_peer_record)
+				const { peerId, multiaddrs } = decodePeerRecord(signed_peer_record)
 				assert(peerId.toString() === peer, "invalid peer record - expected peerId.toString() === peer")
 				yield { id, peerId, multiaddrs, expiration, namespace }
 			}
 		} else {
 			for (const { id, peer, signed_peer_record, expiration } of this.#select.iterate({ cursor, namespace })) {
-				const { peerId, multiaddrs } = await parseRecord(signed_peer_record)
+				const { peerId, multiaddrs } = decodePeerRecord(signed_peer_record)
 				assert(peerId.toString() === peer, "invalid peer record - expected peerId.toString() === peer")
 				yield { id, peerId, multiaddrs, expiration, namespace }
 			}
@@ -122,33 +123,46 @@ export class RegistrationStore {
 		this.#unregister.run({ peer: peerId.toString(), namespace })
 	}
 
-	public discover(namespace: string, limit: bigint, cookie: Uint8Array | null): DiscoverResult {
+	public discover(
+		namespace: string,
+		limit: bigint,
+		cookie: Uint8Array | null,
+		filter?: (namespace: string, peerId: PeerId, multiaddrs: Multiaddr[]) => boolean,
+	): DiscoverResult {
 		let cursor = 0n
 		if (cookie !== null) {
-			const { buffer, byteOffset, byteLength } = cookie
-			assert(byteLength === 8, "invalid cookie")
-			cursor = new DataView(buffer, byteOffset, byteLength).getBigUint64(0)
+			assert(cookie.byteLength === 8, "invalid cookie")
+			const view = new DataView(cookie.buffer, cookie.byteOffset, cookie.byteLength)
+			cursor = view.getBigUint64(0)
 		}
 
+		const registrations: { ns: string; signedPeerRecord: Uint8Array; ttl: bigint }[] = []
 		const expiration = now()
-		const results = this.#discover.all({ cursor, namespace, expiration, limit })
-
 		let lastId = cursor
-		if (results.length > 0) {
-			lastId = results[results.length - 1].id
+		for (const result of this.#discover.iterate({ cursor, namespace, expiration })) {
+			if (filter !== undefined) {
+				const peerRecord = decodePeerRecord(result.signed_peer_record)
+				if (!filter(namespace, peerRecord.peerId, peerRecord.multiaddrs)) {
+					continue
+				}
+			}
+
+			const length = registrations.push({
+				ns: namespace,
+				signedPeerRecord: result.signed_peer_record,
+				ttl: result.expiration - expiration,
+			})
+
+			lastId = result.id
+
+			if (length >= Number(limit)) {
+				break
+			}
 		}
 
 		const cookieBuffer = new ArrayBuffer(8)
 		new DataView(cookieBuffer).setBigUint64(0, lastId)
-
-		return {
-			cookie: new Uint8Array(cookieBuffer),
-			registrations: results.map((result) => ({
-				ns: namespace,
-				signedPeerRecord: result.signed_peer_record,
-				ttl: result.expiration - expiration,
-			})),
-		}
+		return { cookie: new Uint8Array(cookieBuffer), registrations }
 	}
 
 	public gc() {

@@ -1,14 +1,14 @@
 import { PeerId, Startable, TypedEventTarget, Libp2pEvents, PeerStore, StreamHandler } from "@libp2p/interface"
-
 import { Registrar, AddressManager, ConnectionManager } from "@libp2p/interface-internal"
 import { logger } from "@libp2p/logger"
 
+import { Multiaddr } from "@multiformats/multiaddr"
 import * as lp from "it-length-prefixed"
 import { pipe } from "it-pipe"
 
 import { Message, decodeMessages, encodeMessages } from "@canvas-js/libp2p-rendezvous/protocol"
 import { RegistrationStore } from "./RegistrationStore.js"
-import { assert } from "./utils.js"
+import { assert, decodePeerRecord } from "./utils.js"
 
 const clamp = (val: bigint, max: bigint) => (val > max ? max : val)
 
@@ -25,6 +25,7 @@ export interface RendezvousServerInit {
 	path?: string | null
 	maxRegistrationTTL?: number
 	maxDiscoverLimit?: number
+	discoverFilter?: (namespace: string, peerId: PeerId, multiaddrs: Multiaddr[]) => boolean
 }
 
 export class RendezvousServer implements Startable {
@@ -33,6 +34,7 @@ export class RendezvousServer implements Startable {
 	public readonly store: RegistrationStore
 	public readonly maxRegistrationTTL: bigint
 	public readonly maxDiscoverLimit: bigint
+	public readonly discoverFilter?: (namespace: string, peerId: PeerId, multiaddrs: Multiaddr[]) => boolean
 	private readonly log = logger(`canvas:rendezvous:server`)
 
 	#started: boolean = false
@@ -44,8 +46,9 @@ export class RendezvousServer implements Startable {
 		this.store = new RegistrationStore(init.path ?? null)
 
 		// 2h
-		this.maxRegistrationTTL = BigInt(init.maxRegistrationTTL ?? 2 * 60 * 60)
+		this.maxRegistrationTTL = BigInt(init.maxRegistrationTTL ?? 2 * 60 * 60) // 2h
 		this.maxDiscoverLimit = BigInt(init.maxDiscoverLimit ?? 64)
+		this.discoverFilter = init.discoverFilter
 	}
 
 	public isStarted() {
@@ -103,7 +106,7 @@ export class RendezvousServer implements Startable {
 
 				const actualTTL = ttl === 0n ? this.maxRegistrationTTL : clamp(ttl, this.maxRegistrationTTL)
 
-				await this.components.peerStore.consumePeerRecord(signedPeerRecord, peerId)
+				await this.components.peerStore.consumePeerRecord(signedPeerRecord, { expectedPeer: peerId })
 
 				this.store.register(ns, peerId, signedPeerRecord, actualTTL)
 
@@ -131,7 +134,12 @@ export class RendezvousServer implements Startable {
 
 				const actualLimit = limit === 0n ? this.maxDiscoverLimit : clamp(limit, this.maxDiscoverLimit)
 
-				const result = this.store.discover(ns, actualLimit, cookie.byteLength === 0 ? null : cookie)
+				const result = this.store.discover(
+					ns,
+					actualLimit,
+					cookie.byteLength === 0 ? null : cookie,
+					this.discoverFilter,
+				)
 
 				const res: Message = {
 					type: Message.MessageType.DISCOVER_RESPONSE,
